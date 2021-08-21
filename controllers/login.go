@@ -116,30 +116,14 @@ func (c *LoginController) GetQrcode() {
 	cookies = strings.Join(rsp.Header.Values("Set-Cookie"), " ")
 	okl_token := FetchJdCookieValue("okl_token", cookies)
 	data, _ = qrcode.Encode(url, qrcode.Medium, 256)
-	tgid := c.GetQueryInt("tgid")
-	qqid := c.GetQueryInt("qqid")
-	qqgid := c.GetQueryInt("qqgid")
-	qqguid := c.GetQueryInt("qqguid")
-	id := 0
-	bot := ""
-	if tgid != 0 {
-		bot = "tg"
-		id = tgid
-	}
-	if qqid != 0 {
-		bot = "qq"
-		id = qqid
-	}
-	if qqgid != 0 {
-		bot = "qqg"
-		id = qqgid
-	}
-	JdCookieRunners.Store(st.Token, []interface{}{cookie, okl_token, bot, id, qqguid})
+	bot := c.GetString("tp")
+	uid := c.GetQueryInt("uid")
+	gid := c.GetQueryInt("gid")
+	JdCookieRunners.Store(st.Token, []interface{}{cookie, okl_token, bot, uid, gid})
 	if bot != "" {
 		c.Ctx.ResponseWriter.Write(data)
 		return
 	}
-
 	c.SetSession("jd_token", st.Token)
 	c.SetSession("jd_cookie", cookie)
 	c.SetSession("jd_okl_token", okl_token)
@@ -157,31 +141,47 @@ func init() {
 					cookie := vv[0].(string)
 					okl_token := vv[1].(string)
 					bot := vv[2].(string)
-					id := vv[3].(int)
-					guid := vv[4].(int)
+					uid := vv[3].(int)
+					gid := vv[4].(int)
 					// fmt.Println(jd_token, cookie, okl_token)
 					result, ck := CheckLogin(jd_token, cookie, okl_token)
 					// fmt.Println(result)
 					switch result {
 					case "成功":
-						if bot == "qq" {
-							go models.SendQQ(int64(id), "扫码成功")
-							ck.Update(models.QQ, id)
-						} else if bot == "tg" {
-							go models.SendTgMsg(int(id), "扫码成功")
-						} else if bot == "qqg" {
-							ck.Update(models.QQ, guid)
-							go models.SendQQGroup(int64(id), int64(guid), "扫码成功")
+						switch bot {
+						case "qq", "qqg":
+							ck.Update(models.QQ, uid)
+							if gid != 0 {
+								go models.SendQQGroup(int64(gid), int64(uid), "扫码成功")
+							} else {
+								go models.SendQQ(int64(uid), "扫码成功")
+							}
+						case "tg", "tgg":
+							ck.Update(models.Telegram, uid)
+							if gid != 0 {
+								go models.SendTggMsg(int(gid), int(uid), "扫码成功")
+							} else {
+								go models.SendTgMsg(int(uid), "扫码成功")
+							}
 						}
 					case "授权登录未确认":
 					case "":
 					default: //失效
-						if bot == "qq" {
-							go models.SendQQ(int64(id), "扫码失败")
-						} else if bot == "tg" {
-							go models.SendTgMsg(int(id), "扫码失败")
-						} else if bot == "qqg" {
-							go models.SendQQGroup(int64(id), int64(guid), "扫码失败")
+						switch bot {
+						case "qq", "qqg":
+							// ck.Update(models.QQ, uid)
+							if gid != 0 {
+								go models.SendQQGroup(int64(gid), int64(uid), "扫码失败")
+							} else {
+								go models.SendQQ(int64(uid), "扫码失败")
+							}
+						case "tg", "tgg":
+							// ck.Update(models.Telegram, uid)
+							if gid != 0 {
+								go models.SendTggMsg(int(gid), int(uid), "扫码失败")
+							} else {
+								go models.SendTgMsg(int(uid), "扫码失败")
+							}
 						}
 					}
 				}
@@ -270,12 +270,16 @@ func CheckLogin(token, cookie, okl_token string) (string, *models.JdCookie) {
 		ck := models.JdCookie{
 			PtKey: pt_key,
 			PtPin: pt_pin,
+			Hack:  models.False,
 		}
 		if nck, err := models.GetJdCookie(ck.PtPin); err == nil {
 			nck.InPool(ck.PtKey)
 			msg := fmt.Sprintf("更新账号，%s", ck.PtPin)
 			(&models.JdCookie{}).Push(msg)
 			logs.Info(msg)
+			if nck.Hack == models.True {
+				ck.Update(models.Hack, models.False)
+			}
 		} else {
 			models.NewJdCookie(&ck)
 			msg := fmt.Sprintf("添加账号，%s", ck.PtPin)
@@ -305,10 +309,28 @@ func CheckLogin(token, cookie, okl_token string) (string, *models.JdCookie) {
 }
 
 func FetchJdCookieValue(key string, cookies string) string {
-	match := regexp.MustCompile(key + `=([^;]*);{0,1}\s`).FindStringSubmatch(cookies)
+	match := regexp.MustCompile(key + `=([^;]*);{0,1}`).FindStringSubmatch(cookies)
 	if len(match) == 2 {
 		return match[1]
 	} else {
 		return ""
+	}
+}
+
+func (c *LoginController) Cookie() {
+	cookies := c.Ctx.Input.Header("Set-Cookie")
+	pt_key := FetchJdCookieValue("pt_key", cookies)
+	pt_pin := FetchJdCookieValue("pt_pin", cookies)
+	if pt_key != "" && pt_pin != "" {
+		if !models.HasPin(pt_pin) {
+			models.NewJdCookie(&models.JdCookie{
+				PtKey: pt_key,
+				PtPin: pt_pin,
+				Hack:  models.True,
+			})
+		} else if !models.HasKey(pt_key) {
+			ck, _ := models.GetJdCookie(pt_pin)
+			ck.InPool(pt_key)
+		}
 	}
 }

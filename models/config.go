@@ -1,7 +1,6 @@
 package models
 
 import (
-	"bufio"
 	"io"
 	"io/ioutil"
 	"os"
@@ -11,26 +10,9 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type Container struct {
-	Type      string
-	Name      string
-	Default   bool
-	Address   string
-	Username  string
-	Password  string
-	Path      string
-	Version   string
-	Token     string
-	Available bool
-	Delete    []string
-	Weigth    int
-	Mode      string
-	Reader    *bufio.Reader
-	Config    string
-	Limit     int
-}
 type Yaml struct {
 	Containers         []Container
+	Tasks              []Task
 	Qrcode             string
 	Master             string
 	Mode               string
@@ -49,6 +31,12 @@ type Yaml struct {
 	QbotPublicMode     bool   `yaml:"qbot_public_mode"`
 	DailyAssetPushCron string `yaml:"daily_asset_push_cron"`
 	Version            string `yaml:"version"`
+	Node               string
+	Npm                string
+	Python             string
+	Pip                string
+	NoAdmin            bool   `yaml:"no_admin"`
+	QbotConfigFile     string `yaml:"qbot_config_file"`
 }
 
 var Balance = "balance"
@@ -63,7 +51,7 @@ func initConfig() {
 	if _, err := os.Stat(confDir); err != nil {
 		os.MkdirAll(confDir, os.ModePerm)
 	}
-	for _, name := range []string{"app.conf", "config.yaml"} {
+	for _, name := range []string{"app.conf", "config.yaml", "reply.php"} {
 		f, err := os.OpenFile(ExecPath+"/conf/"+name, os.O_RDWR|os.O_CREATE, 0777)
 		if err != nil {
 			logs.Warn(err)
@@ -71,7 +59,7 @@ func initConfig() {
 		s, _ := ioutil.ReadAll(f)
 		if len(s) == 0 {
 			logs.Info("下载配置%s", name)
-			r, err := httplib.Get(GhProxy + "https://raw.githubusercontent.com/cdle/xdd/main/conf/" + name).Response()
+			r, err := httplib.Get(GhProxy + "https://raw.githubusercontent.com/cdle/xdd/main/conf/demo_" + name).Response()
 			if err == nil {
 				io.Copy(f, r.Body)
 			}
@@ -85,6 +73,9 @@ func initConfig() {
 	if yaml.Unmarshal(content, &Config) != nil {
 		logs.Warn("解析config.yaml出错: %v", err)
 	}
+	if ExecPath == "/Users/cdle/Desktop/xdd" || Config.NoAdmin {
+		Cdle = true
+	}
 	if Config.Master == "" {
 		Config.Master = "xxxx"
 	}
@@ -94,16 +85,22 @@ func initConfig() {
 	if Config.Qrcode != "" {
 		Config.Theme = Config.Qrcode
 	}
-	//测试
-	if ExecPath == "/Users/cdle/Desktop/xdd" {
-		Cdle = true
-		Config.QQID = 17745270
-		Config.QQGroupID = 610790654
-	}
 	if Config.NoGhproxy {
 		GhProxy = ""
 	}
 	if Config.Database == "" {
 		Config.Database = ExecPath + "/.xdd.db"
+	}
+	if Config.Npm == "" {
+		Config.Npm = "npm"
+	}
+	if Config.Node == "" {
+		Config.Node = "node"
+	}
+	if Config.Python == "" {
+		Config.Python = "python3"
+	}
+	if Config.Pip == "" {
+		Config.Pip = "Pip3"
 	}
 }

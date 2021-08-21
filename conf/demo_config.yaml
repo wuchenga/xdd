@@ -18,6 +18,16 @@ telegram_bot_token:
 telegram_user_id:
 qquid:
 qqgid:
+qbot_public_mode: true
 default_priority:
 no_ghproxy: true
 daily_asset_push_cron:
+tasks:
+  - cron: 0 0 * * *
+    path: https://raw.githubusercontent.com/cdle/xdd/main/scripts/jd_angryBean.js
+    enable: true
+    word: 抢京豆
+    hack: true
+    envs:
+      - name: angryBeanPins
+        value: jd_xxxxx&jd_ooooo

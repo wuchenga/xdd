@@ -38,6 +38,7 @@ func initDB() {
 	db.AutoMigrate(
 		&JdCookie{},
 		&JdCookiePool{},
+		&User{},
 	)
 	keys = make(map[string]bool)
 	pins = make(map[string]bool)
@@ -91,6 +92,7 @@ type JdCookie struct {
 	Cash         string `gorm:"column:Cash"`
 	Help         string `gorm:"column:Help;default:false" validate:"oneof=true false"`
 	Pool         string `gorm:"-"`
+	Hack         string `gorm:"column:Hack"  validate:"oneof=true false"`
 }
 
 type JdCookiePool struct {
@@ -120,6 +122,7 @@ var PushPlus = "PushPlus"
 var Save chan *JdCookie
 var ExecPath string
 var Telegram = "Telegram"
+var Hack = "Hack"
 
 const (
 	Fruit        = "Fruit"
@@ -164,7 +167,7 @@ func (ck *JdCookie) Update(column string, value interface{}) {
 		db.Model(ck).Update(column, value)
 	}
 	if ck.PtPin != "" {
-		db.Model(ck).Where(PtPin+" = ?", ck.PtPin).Update(column, value)
+		db.Model(JdCookie{}).Where(PtPin+" = ?", ck.PtPin).Update(column, value)
 	}
 }
 
@@ -184,7 +187,7 @@ func (ck *JdCookie) InPool(pt_key string) error {
 			tx.Rollback()
 			return err
 		}
-		tx.Model(ck).Where(fmt.Sprintf("%s = '%s'", Available, False)).Updates(map[string]interface{}{
+		tx.Model(ck).Updates(map[string]interface{}{
 			Available: True,
 			PtKey:     pt_key,
 		})
@@ -207,12 +210,12 @@ func (ck *JdCookie) OutPool() (string, error) {
 			us[Available] = True
 			us[PtKey] = jp.PtKey
 		}
-		e := tx.Where(fmt.Sprintf("%s = '%s'", Available, True)).Model(ck).Updates(us).RowsAffected
+		e := tx.Model(ck).Updates(us).RowsAffected
 		if e == 0 {
 			tx.Rollback()
 			return "", nil
 		}
-		ck.Available = True
+		ck.Available = us[Available].(string)
 		ck.PtKey = jp.PtKey
 		return jp.PtKey, tx.Commit().Error
 	}
@@ -220,6 +223,9 @@ func (ck *JdCookie) OutPool() (string, error) {
 }
 
 func NewJdCookie(ck *JdCookie) error {
+	if ck.Hack == "" {
+		ck.Hack = False
+	}
 	ck.Priority = Config.DefaultPriority
 	date := Date()
 	ck.CreateAt = date
@@ -244,6 +250,7 @@ func CheckIn(pin, key string) int {
 		NewJdCookie(&JdCookie{
 			PtKey: key,
 			PtPin: pin,
+			Hack:  False,
 		})
 		return 0
 	} else if !HasKey(key) {
